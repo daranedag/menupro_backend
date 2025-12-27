@@ -5,9 +5,12 @@ import { validate } from '@/middleware/validation';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { ApiResponseUtil } from '@/utils/response';
 import { supabase, supabaseAdmin } from '@/config/supabase';
-import { generateSlug } from '@/utils/slugify';
+import { generateSlug, generateUniqueSlug } from '@/utils/slugify';
 import type { AuthRequest } from '@/types';
 import { AppError } from '@/types';
+import type { Database } from '@/types/database';
+
+type MenuWithRestaurant = Database['public']['Views']['menus_with_restaurant']['Row'];
 
 const router = Router();
 
@@ -16,6 +19,10 @@ const createMenuSchema = z.object({
   restaurant_id: z.string().uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
+});
+
+const publishMenuSchema = z.object({
+  is_published: z.boolean(),
 });
 
 /**
@@ -68,14 +75,20 @@ router.get('/public/:restaurantSlug/:menuSlug', optionalAuth, asyncHandler(async
   }
 
   // Incrementar view count (async, no bloquear respuesta)
-  supabase
+  const menuData = data as MenuWithRestaurant;
+  const menuId = menuData.id as string;
+  const currentViewCount = (menuData.view_count as number) || 0;
+  (supabaseAdmin as any)
     .from('menus')
     .update({
-      view_count: data.view_count + 1,
+      view_count: currentViewCount + 1,
       last_viewed_at: new Date().toISOString(),
     })
-    .eq('id', data.id)
-    .then(() => {});
+    .eq('id', menuId)
+    .then(() => {})
+    .catch((err: Error) => {
+      console.error('Error incrementando view count:', err.message);
+    });
 
   return ApiResponseUtil.success(res, data);
 }));
@@ -92,14 +105,37 @@ router.post(
     const body = req.body;
 
     // Verificar límite de menús según tier
-    const { data: canCreate } = await supabaseAdmin
+    const { data: canCreate, error: rpcError } = await (supabaseAdmin as any)
       .rpc('check_menu_limit', { p_restaurant_id: body.restaurant_id });
 
-    if (!canCreate) {
+    if (rpcError || !canCreate) {
       throw new AppError('Has alcanzado el límite de menús de tu plan', 403);
     }
+    // Verificar ownership del restaurant
+    const { data: restaurant } = await supabaseAdmin
+      .from('restaurants')
+      .select('id')
+      .eq('id', body.restaurant_id)
+      .eq('owner_id', req.userId!)
+      .single();
 
-    const slug = generateSlug(body.name);
+    if (!restaurant) {
+      throw new AppError('Restaurant no encontrado', 404);
+    }
+
+    // Generar slug y verificar si ya existe
+    let slug = generateSlug(body.name);
+    const { data: existingMenu } = await supabaseAdmin
+      .from('menus')
+      .select('id')
+      .eq('restaurant_id', body.restaurant_id)
+      .eq('slug', slug)
+      .single();
+
+    // Si existe, usar slug único con timestamp
+    if (existingMenu) {
+      slug = generateUniqueSlug(body.name);
+    }
 
     const { data, error } = await supabaseAdmin
       .from('menus')
@@ -108,7 +144,7 @@ router.post(
         name: body.name,
         slug,
         description: body.description,
-      })
+      } as any)
       .select()
       .single();
 
@@ -127,13 +163,31 @@ router.post(
  * PATCH /api/menus/:id/publish
  * Publicar/despublicar menú
  */
-router.patch('/:id/publish', authenticate, asyncHandler(async (req: AuthRequest, res) => {
+router.patch(
+  '/:id/publish',
+  authenticate,
+  validate(publishMenuSchema),
+  asyncHandler(async (req: AuthRequest, res) => {
   const { id } = req.params;
   const { is_published } = req.body;
 
-  const { data, error } = await supabaseAdmin
+  // Verificar ownership del menú a través del restaurante
+  const { data: menu } = await supabaseAdmin
     .from('menus')
-    .update({ is_published })
+    .select('id, restaurant_id, restaurants!inner(owner_id)')
+    .eq('id', id)
+    .single();
+
+  if (!menu || (menu as any).restaurants?.owner_id !== req.userId) {
+    throw new AppError('Menú no encontrado', 404);
+  }
+
+  const { data, error } = await (supabaseAdmin as any)
+    .from('menus')
+    .update({
+      is_published: is_published,
+      published_at: is_published ? new Date().toISOString() : null,
+    })
     .eq('id', id)
     .select()
     .single();
@@ -142,6 +196,7 @@ router.patch('/:id/publish', authenticate, asyncHandler(async (req: AuthRequest,
 
   const message = is_published ? 'Menú publicado' : 'Menú despublicado';
   return ApiResponseUtil.success(res, data, message);
-}));
+  })
+);
 
 export default router;

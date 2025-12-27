@@ -115,3 +115,9 @@ export const requireRole = (roles: string[]) => {
     }
   };
 };
+
+export default {
+  authenticate,
+  optionalAuth,
+  requireRole,
+};

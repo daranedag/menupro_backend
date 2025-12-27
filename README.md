@@ -60,14 +60,18 @@ src/
 ├── config/          # Configuración (Supabase, env)
 ├── middleware/      # Middlewares (auth, validación, errores)
 ├── routes/          # Rutas de la API
+├── services/        # Lógica de negocio
 ├── types/           # Tipos de TypeScript
 ├── utils/           # Utilidades (response, slugify)
-├── services/        # Lógica de negocio (próximo)
 └── index.ts         # Entry point
 
-database_schema.sql      # Schema completo de DB
-migration_cadenas.sql    # Migración para cadenas
-ejemplos_cadenas.sql     # Ejemplos de uso
+scripts/
+└── migrate.ts           # Script de migración de DB
+
+sql_files/
+├── database_schema.sql      # Schema completo de DB
+├── migration_cadenas.sql    # Migración para cadenas
+└── ejemplos_cadenas.sql     # Ejemplos de uso
 ```
 
 ## 🔑 API Endpoints
