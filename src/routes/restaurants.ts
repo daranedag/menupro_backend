@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '@/middleware/auth';
 import { validate } from '@/middleware/validation';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { ApiResponseUtil } from '@/utils/response';
-import { supabase } from '@/config/supabase';
+import { supabase, supabaseAdmin } from '@/config/supabase';
 import { generateSlug } from '@/utils/slugify';
 import type { AuthRequest } from '@/types';
 import { AppError } from '@/types';
@@ -30,29 +30,14 @@ const updateRestaurantSchema = createRestaurantSchema.partial();
  * Listar restaurants del usuario autenticado
  */
 router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res) => {
-  console.log('🔍 User ID from token:', req.userId);
-  
-  // Verificar que existe el user_profile
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('*')
-    .eq('id', req.userId!)
-    .single();
-  
-  console.log('👤 User profile:', profile);
-  
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('restaurants')
     .select('*, restaurant_subscriptions(*, tiers(*))')
     .eq('owner_id', req.userId!)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
 
-  console.log('🏪 Restaurants found:', data?.length || 0);
-  console.log('📊 Data:', data);
-
   if (error) {
-    console.error('Supabase error:', error);
     throw new AppError(`Error obteniendo restaurants: ${error.message}`, 500);
   }
 
@@ -66,7 +51,7 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res) => {
 router.get('/:id', authenticate, asyncHandler(async (req: AuthRequest, res) => {
   const { id } = req.params;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('restaurants')
     .select('*, restaurant_subscriptions(*, tiers(*))')
     .eq('id', id)
@@ -93,7 +78,7 @@ router.post(
     const body = req.body;
     const slug = generateSlug(body.name);
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('restaurants')
       .insert({
         owner_id: req.userId!,
@@ -134,7 +119,7 @@ router.patch(
     const body = req.body;
 
     // Verificar ownership
-    const { data: existing } = await supabase
+    const { data: existing } = await supabaseAdmin
       .from('restaurants')
       .select('id')
       .eq('id', id)
@@ -145,7 +130,7 @@ router.patch(
       throw new AppError('Restaurant no encontrado', 404);
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('restaurants')
       .update(body)
       .eq('id', id)
@@ -165,7 +150,7 @@ router.patch(
 router.delete('/:id', authenticate, asyncHandler(async (req: AuthRequest, res) => {
   const { id } = req.params;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('restaurants')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', id)

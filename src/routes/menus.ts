@@ -4,7 +4,7 @@ import { authenticate, optionalAuth } from '@/middleware/auth';
 import { validate } from '@/middleware/validation';
 import { asyncHandler } from '@/middleware/errorHandler';
 import { ApiResponseUtil } from '@/utils/response';
-import { supabase } from '@/config/supabase';
+import { supabase, supabaseAdmin } from '@/config/supabase';
 import { generateSlug } from '@/utils/slugify';
 import type { AuthRequest } from '@/types';
 import { AppError } from '@/types';
@@ -26,7 +26,7 @@ router.get('/restaurant/:restaurantId', authenticate, asyncHandler(async (req: A
   const { restaurantId } = req.params;
 
   // Verificar ownership del restaurant
-  const { data: restaurant } = await supabase
+  const { data: restaurant } = await supabaseAdmin
     .from('restaurants')
     .select('id')
     .eq('id', restaurantId)
@@ -37,7 +37,7 @@ router.get('/restaurant/:restaurantId', authenticate, asyncHandler(async (req: A
     throw new AppError('Restaurant no encontrado', 404);
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('menus')
     .select('*')
     .eq('restaurant_id', restaurantId)
@@ -92,7 +92,7 @@ router.post(
     const body = req.body;
 
     // Verificar límite de menús según tier
-    const { data: canCreate } = await supabase
+    const { data: canCreate } = await supabaseAdmin
       .rpc('check_menu_limit', { p_restaurant_id: body.restaurant_id });
 
     if (!canCreate) {
@@ -101,7 +101,7 @@ router.post(
 
     const slug = generateSlug(body.name);
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('menus')
       .insert({
         restaurant_id: body.restaurant_id,
@@ -131,7 +131,7 @@ router.patch('/:id/publish', authenticate, asyncHandler(async (req: AuthRequest,
   const { id } = req.params;
   const { is_published } = req.body;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('menus')
     .update({ is_published })
     .eq('id', id)

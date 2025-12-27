@@ -34,7 +34,7 @@ Thumbs.db
 *~
 
 # DB
-#*.sql
+*.sql
 
 # Testing
 coverage
