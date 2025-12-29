@@ -3,11 +3,13 @@ import restaurantsRouter from './restaurants';
 import menusRouter from './menus';
 import healthRouter from './health';
 import subscriptionsRouter from './subscriptions';
+import authRouter from './auth';
 
 const router = Router();
 
 // Rutas de la API
 router.use('/health', healthRouter);
+router.use('/auth', authRouter);
 router.use('/restaurants', restaurantsRouter);
 router.use('/menus', menusRouter);
 router.use('/subscriptions', subscriptionsRouter);

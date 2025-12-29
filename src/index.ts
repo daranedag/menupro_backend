@@ -7,12 +7,20 @@ import { errorHandler, notFoundHandler } from '@/middleware/errorHandler';
 
 const app = express();
 
+// Lista de orígenes permitidos (soporta coma separada en .env)
+const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) return callback(null, true); // requests sin origin (curl, herramientas) permitidas
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+};
+
 // Middlewares de seguridad
 app.use(helmet());
-app.use(cors({
-  origin: env.CORS_ORIGIN,
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 
 // Body parser
 app.use(express.json());

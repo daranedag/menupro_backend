@@ -21,8 +21,28 @@ const createMenuSchema = z.object({
   description: z.string().optional(),
 });
 
+const updateMenuSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  description: z.string().optional(),
+});
+
 const publishMenuSchema = z.object({
   is_published: z.boolean(),
+});
+
+const createSectionSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
+  order_index: z.number().int().min(0),
+});
+
+const reorderSectionsSchema = z.object({
+  sections: z.array(
+    z.object({
+      id: z.string().uuid(),
+      order_index: z.number().int().min(0),
+    })
+  ).min(1),
 });
 
 /**
@@ -160,6 +180,61 @@ router.post(
 );
 
 /**
+ * PATCH /api/menus/:id
+ * Actualizar nombre/descripcion de un menú
+ */
+router.patch(
+  '/:id',
+  authenticate,
+  validate(updateMenuSchema),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { id } = req.params;
+    const body = req.body as z.infer<typeof updateMenuSchema>;
+
+    // Verificar ownership del menú a través del restaurante
+    const { data: menu } = await supabaseAdmin
+      .from('menus')
+      .select('id, restaurant_id, name, slug, restaurants!inner(owner_id)')
+      .eq('id', id)
+      .single();
+
+    if (!menu || (menu as any).restaurants?.owner_id !== req.userId) {
+      throw new AppError('Menú no encontrado', 404);
+    }
+
+    let slug = (menu as any).slug as string;
+    if (body.name && body.name !== (menu as any).name) {
+      slug = generateSlug(body.name);
+      const { data: existing } = await supabaseAdmin
+        .from('menus')
+        .select('id')
+        .eq('restaurant_id', (menu as any).restaurant_id)
+        .eq('slug', slug)
+        .neq('id', id)
+        .maybeSingle();
+
+      if (existing) {
+        slug = generateUniqueSlug(body.name);
+      }
+    }
+
+    const { data, error } = await (supabaseAdmin as any)
+      .from('menus')
+      .update({
+        ...(body.name ? { name: body.name, slug } : {}),
+        ...(body.description !== undefined ? { description: body.description } : {}),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new AppError('Error actualizando menú', 500);
+
+    return ApiResponseUtil.success(res, data, 'Menú actualizado exitosamente');
+  })
+);
+
+/**
  * PATCH /api/menus/:id/publish
  * Publicar/despublicar menú
  */
@@ -196,6 +271,132 @@ router.patch(
 
   const message = is_published ? 'Menú publicado' : 'Menú despublicado';
   return ApiResponseUtil.success(res, data, message);
+  })
+);
+
+/**
+ * POST /api/menus/:menuId/sections
+ * Crear una nueva sección en un menú (permite definir posición/order_index)
+ */
+router.post(
+  '/:menuId/sections',
+  authenticate,
+  validate(createSectionSchema),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { menuId } = req.params;
+    const body = req.body as z.infer<typeof createSectionSchema>;
+
+    // Verificar ownership del menú a través del restaurante
+    const { data: menu } = await supabaseAdmin
+      .from('menus')
+      .select('id, restaurant_id, restaurants!inner(owner_id)')
+      .eq('id', menuId)
+      .single();
+
+    if (!menu || (menu as any).restaurants?.owner_id !== req.userId) {
+      throw new AppError('Menú no encontrado', 404);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('menu_sections')
+      .insert({
+        menu_id: menuId,
+        name: body.name,
+        description: body.description,
+        order_index: body.order_index,
+      } as any)
+      .select()
+      .single();
+
+    if (error) throw new AppError('Error creando sección', 500);
+
+    return ApiResponseUtil.created(res, data, 'Sección creada exitosamente');
+  })
+);
+
+/**
+ * GET /api/menus/:menuId/sections
+ * Obtener secciones existentes de un menú (ordenadas por order_index)
+ */
+router.get(
+  '/:menuId/sections',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { menuId } = req.params;
+
+    // Verificar ownership del menú a través del restaurante
+    const { data: menu } = await supabaseAdmin
+      .from('menus')
+      .select('id, restaurants!inner(owner_id)')
+      .eq('id', menuId)
+      .single();
+
+    if (!menu || (menu as any).restaurants?.owner_id !== req.userId) {
+      throw new AppError('Menú no encontrado', 404);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('menu_sections')
+      .select('*')
+      .eq('menu_id', menuId)
+      .order('order_index', { ascending: true });
+
+    if (error) throw new AppError('Error obteniendo secciones', 500);
+
+    return ApiResponseUtil.success(res, data, 'Secciones obtenidas exitosamente');
+  })
+);
+
+/**
+ * PATCH /api/menus/:menuId/sections/reorder
+ * Actualizar el orden (order_index) de múltiples secciones
+ */
+router.patch(
+  '/:menuId/sections/reorder',
+  authenticate,
+  validate(reorderSectionsSchema),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { menuId } = req.params;
+    const { sections } = req.body as z.infer<typeof reorderSectionsSchema>;
+
+    // Verificar ownership del menú
+    const { data: menu } = await supabaseAdmin
+      .from('menus')
+      .select('id, restaurants!inner(owner_id)')
+      .eq('id', menuId)
+      .single();
+
+    if (!menu || (menu as any).restaurants?.owner_id !== req.userId) {
+      throw new AppError('Menú no encontrado', 404);
+    }
+
+    // Actualizar cada sección
+    for (const section of sections) {
+      const updates: Database['public']['Tables']['menu_sections']['Update'] = {
+        order_index: section.order_index,
+      };
+
+      const { error } = await supabaseAdmin
+        .from('menu_sections')
+        .update(updates)
+        .eq('id', section.id)
+        .eq('menu_id', menuId);
+
+      if (error) {
+        throw new AppError('Error actualizando orden de secciones', 500);
+      }
+    }
+
+    // Devolver secciones ordenadas actualizadas
+    const { data: updatedSections, error: fetchError } = await supabaseAdmin
+      .from('menu_sections')
+      .select('*')
+      .eq('menu_id', menuId)
+      .order('order_index', { ascending: true });
+
+    if (fetchError) throw new AppError('Error obteniendo secciones actualizadas', 500);
+
+    return ApiResponseUtil.success(res, updatedSections, 'Orden de secciones actualizado');
   })
 );
 
