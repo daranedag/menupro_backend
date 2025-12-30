@@ -1,5 +1,5 @@
 import type { Response, NextFunction } from 'express';
-import { supabase } from '@/config/supabase';
+import { supabase, supabaseAdmin } from '@/config/supabase';
 import { AppError, type AuthRequest } from '@/types';
 
 /**
@@ -85,7 +85,8 @@ export const requireRole = (roles: string[]) => {
         throw new AppError('Usuario no autenticado', 401);
       }
 
-      const { data: profile, error } = await supabase
+      // Usar supabaseAdmin para evitar bloqueos de RLS al consultar perfiles
+      const { data: profile, error } = await supabaseAdmin
         .from('user_profiles')
         .select('role')
         .eq('id', req.userId)

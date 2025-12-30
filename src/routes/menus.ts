@@ -438,7 +438,7 @@ router.patch(
         order_index: item.order_index,
       };
 
-      const { error } = await supabaseAdmin
+      const { error } = await (supabaseAdmin as any)
         .from('menu_items')
         .update(updates)
         .eq('id', item.id)
@@ -523,7 +523,7 @@ router.patch(
         order_index: section.order_index,
       };
 
-      const { error } = await supabaseAdmin
+      const { error } = await (supabaseAdmin as any)
         .from('menu_sections')
         .update(updates)
         .eq('id', section.id)
