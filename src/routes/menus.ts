@@ -45,6 +45,26 @@ const reorderSectionsSchema = z.object({
   ).min(1),
 });
 
+const createMenuItemSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().optional(),
+  price: z.number().positive(),
+  image_url: z.string().url().optional(),
+  available: z.boolean().optional(),
+  order_index: z.number().int().min(0),
+  discount_type: z.enum(['none', 'percentage', 'fixed']).optional(),
+  discount_value: z.number().min(0).optional(),
+});
+
+const reorderMenuItemsSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string().uuid(),
+      order_index: z.number().int().min(0),
+    })
+  ).min(1),
+});
+
 /**
  * GET /api/menus/restaurant/:restaurantId
  * Listar menús de un restaurant
@@ -311,6 +331,133 @@ router.post(
     if (error) throw new AppError('Error creando sección', 500);
 
     return ApiResponseUtil.created(res, data, 'Sección creada exitosamente');
+  })
+);
+
+/**
+ * POST /api/menus/sections/:sectionId/items
+ * Crear un nuevo plato dentro de una sección
+ */
+router.post(
+  '/sections/:sectionId/items',
+  authenticate,
+  validate(createMenuItemSchema),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { sectionId } = req.params;
+    const body = req.body as z.infer<typeof createMenuItemSchema>;
+
+    // Verificar ownership a través del menú de la sección
+    const { data: section } = await supabaseAdmin
+      .from('menu_sections')
+      .select('id, menu_id, menus!inner(restaurants!inner(owner_id))')
+      .eq('id', sectionId)
+      .single();
+
+    if (!section || (section as any).menus?.restaurants?.owner_id !== req.userId) {
+      throw new AppError('Sección no encontrada', 404);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('menu_items')
+      .insert({
+        section_id: sectionId,
+        name: body.name,
+        description: body.description,
+        price: body.price,
+        image_url: body.image_url,
+        available: body.available ?? true,
+        order_index: body.order_index,
+        discount_type: body.discount_type ?? 'none',
+        discount_value: body.discount_value ?? 0,
+      } as any)
+      .select()
+      .single();
+
+    if (error) throw new AppError('Error creando plato', 500);
+
+    return ApiResponseUtil.created(res, data, 'Plato creado exitosamente');
+  })
+);
+
+/**
+ * GET /api/menus/sections/:sectionId/items
+ * Obtener platos de una sección
+ */
+router.get(
+  '/sections/:sectionId/items',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { sectionId } = req.params;
+
+    const { data: section } = await supabaseAdmin
+      .from('menu_sections')
+      .select('id, menus!inner(restaurants!inner(owner_id))')
+      .eq('id', sectionId)
+      .single();
+
+    if (!section || (section as any).menus?.restaurants?.owner_id !== req.userId) {
+      throw new AppError('Sección no encontrada', 404);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('menu_items')
+      .select('*')
+      .eq('section_id', sectionId)
+      .order('order_index', { ascending: true });
+
+    if (error) throw new AppError('Error obteniendo platos', 500);
+
+    return ApiResponseUtil.success(res, data, 'Platos obtenidos exitosamente');
+  })
+);
+
+/**
+ * PATCH /api/menus/sections/:sectionId/items/reorder
+ * Actualizar el orden (order_index) de múltiples platos
+ */
+router.patch(
+  '/sections/:sectionId/items/reorder',
+  authenticate,
+  validate(reorderMenuItemsSchema),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { sectionId } = req.params;
+    const { items } = req.body as z.infer<typeof reorderMenuItemsSchema>;
+
+    const { data: section } = await supabaseAdmin
+      .from('menu_sections')
+      .select('id, menus!inner(restaurants!inner(owner_id))')
+      .eq('id', sectionId)
+      .single();
+
+    if (!section || (section as any).menus?.restaurants?.owner_id !== req.userId) {
+      throw new AppError('Sección no encontrada', 404);
+    }
+
+    for (const item of items) {
+      const updates: Database['public']['Tables']['menu_items']['Update'] = {
+        order_index: item.order_index,
+      };
+
+      const { error } = await supabaseAdmin
+        .from('menu_items')
+        .update(updates)
+        .eq('id', item.id)
+        .eq('section_id', sectionId);
+
+      if (error) {
+        throw new AppError('Error actualizando orden de platos', 500);
+      }
+    }
+
+    const { data: updatedItems, error: fetchError } = await supabaseAdmin
+      .from('menu_items')
+      .select('*')
+      .eq('section_id', sectionId)
+      .order('order_index', { ascending: true });
+
+    if (fetchError) throw new AppError('Error obteniendo platos actualizados', 500);
+
+    return ApiResponseUtil.success(res, updatedItems, 'Orden de platos actualizado');
   })
 );
 

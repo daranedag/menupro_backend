@@ -707,5 +707,8 @@ export interface Database {
       user_role: 'platform_admin' | 'restaurant_owner'
       discount_type: 'none' | 'percentage' | 'fixed'
     }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
 }
