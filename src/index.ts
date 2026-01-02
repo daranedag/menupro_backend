@@ -12,7 +12,14 @@ const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Bo
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     if (!origin) return callback(null, true); // requests sin origin (curl, herramientas) permitidas
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    const isExplicitlyAllowed = allowedOrigins.includes(origin);
+    const isLocalDevOrigin =
+      env.NODE_ENV === 'development' &&
+      (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'));
+
+    if (isExplicitlyAllowed || isLocalDevOrigin) return callback(null, true);
+
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -58,11 +65,11 @@ app.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════╗
 ║                                           ║
-║   🚀 ${env.APP_NAME} API                    ║
+║   🚀 ${env.APP_NAME} API                  ║
 ║                                           ║
-║   Environment: ${env.NODE_ENV.padEnd(22)}    ║
-║   Port: ${PORT.toString().padEnd(31)}    ║
-║   URL: ${env.APP_URL.padEnd(32)}    ║
+║   Environment: ${env.NODE_ENV.padEnd(22)} ║
+║   Port: ${PORT.toString().padEnd(31)}     ║
+║   URL: ${env.APP_URL.padEnd(32)}          ║
 ║                                           ║
 ║   ✅ Server is running!                   ║
 ║                                           ║

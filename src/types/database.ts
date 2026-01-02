@@ -16,6 +16,7 @@ export interface Database {
         Row: {
           id: string
           email: string | null
+          name: string | null
           role: 'platform_admin' | 'restaurant_owner'
           created_at: string
           updated_at: string
@@ -23,6 +24,7 @@ export interface Database {
         Insert: {
           id: string
           email?: string | null
+          name?: string | null
           role?: 'platform_admin' | 'restaurant_owner'
           created_at?: string
           updated_at?: string
@@ -30,6 +32,7 @@ export interface Database {
         Update: {
           id?: string
           email?: string | null
+          name?: string | null
           role?: 'platform_admin' | 'restaurant_owner'
           created_at?: string
           updated_at?: string

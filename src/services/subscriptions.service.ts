@@ -42,10 +42,18 @@ export class SubscriptionService {
     const result: TierWithFeatures[] = []
 
     for (const tier of (tiers || []) as any[]) {
-      const { data: features, error: featuresError } = await this.supabase
-        .from('tier_available_features')
-        .select('*')
+      const { data: tierFeatures, error: featuresError } = await this.supabase
+        .from('tier_features')
+        .select(
+          `
+          tier_id,
+          included_by_default,
+          discount_percentage,
+          feature:features(id, key, name, description, category, base_price, active)
+        `
+        )
         .eq('tier_id', tier.id)
+        .eq('feature.active', true)
 
       if (featuresError) throw featuresError
 
@@ -55,17 +63,26 @@ export class SubscriptionService {
         tier_base_price: tier.base_price_monthly || 0,
         tier_description: tier.description || null,
         features:
-          (features as any[])?.map((f) => ({
-            feature_id: f.feature_id,
-            feature_key: f.feature_key,
-            feature_name: f.feature_name,
-            feature_description: null,
-            feature_category: '',
-            base_price: f.feature_base_price,
-            included_by_default: f.included_by_default,
-            discount_percentage: f.discount_percentage,
-            final_price: f.final_price,
-          })) || [],
+          (tierFeatures as any[])?.map((tf) => {
+            const feature = tf.feature || {}
+            const basePrice = feature.base_price || 0
+            const discount = tf.discount_percentage || 0
+            const finalPrice = tf.included_by_default
+              ? 0
+              : basePrice * (1 - discount / 100)
+
+            return {
+              feature_id: feature.id,
+              feature_key: feature.key,
+              feature_name: feature.name,
+              feature_description: feature.description,
+              feature_category: feature.category,
+              base_price: basePrice,
+              included_by_default: tf.included_by_default,
+              discount_percentage: tf.discount_percentage,
+              final_price: finalPrice,
+            }
+          }) || [],
       })
     }
 
