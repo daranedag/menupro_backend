@@ -134,6 +134,8 @@ export interface TierWithFeatures {
   tier_id: number
   tier_name: string
   tier_base_price: number
+  max_menus: number
+  max_restaurants?: number
   tier_description: string | null
   features: Array<{
     feature_id: number

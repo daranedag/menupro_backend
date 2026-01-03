@@ -61,6 +61,8 @@ export class SubscriptionService {
         tier_id: tier.id,
         tier_name: tier.name,
         tier_base_price: tier.base_price_monthly || 0,
+        max_menus: tier.max_menus ?? 0,
+        max_restaurants: tier.max_restaurants ?? null,
         tier_description: tier.description || null,
         features:
           (tierFeatures as any[])?.map((tf) => {
