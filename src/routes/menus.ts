@@ -214,7 +214,7 @@ router.patch(
     // Verificar ownership del menú a través del restaurante
     const { data: menu } = await supabaseAdmin
       .from('menus')
-      .select('id, restaurant_id, name, slug, restaurants!inner(owner_id)')
+      .select('id, restaurant_id, name, description, slug, restaurants!inner(owner_id)')
       .eq('id', id)
       .single();
 
@@ -222,28 +222,37 @@ router.patch(
       throw new AppError('Menú no encontrado', 404);
     }
 
-    let slug = (menu as any).slug as string;
+    const updates: Database['public']['Tables']['menus']['Update'] = {};
+
     if (body.name && body.name !== (menu as any).name) {
-      slug = generateSlug(body.name);
+      let nextSlug = generateSlug(body.name);
       const { data: existing } = await supabaseAdmin
         .from('menus')
         .select('id')
         .eq('restaurant_id', (menu as any).restaurant_id)
-        .eq('slug', slug)
+        .eq('slug', nextSlug)
         .neq('id', id)
         .maybeSingle();
 
       if (existing) {
-        slug = generateUniqueSlug(body.name);
+        nextSlug = generateUniqueSlug(body.name);
       }
+
+      updates.name = body.name;
+      updates.slug = nextSlug;
+    }
+
+    if (body.description !== undefined && body.description !== (menu as any).description) {
+      updates.description = body.description;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return ApiResponseUtil.success(res, menu, 'No hay cambios para aplicar');
     }
 
     const { data, error } = await (supabaseAdmin as any)
       .from('menus')
-      .update({
-        ...(body.name ? { name: body.name, slug } : {}),
-        ...(body.description !== undefined ? { description: body.description } : {}),
-      })
+      .update(updates)
       .eq('id', id)
       .select()
       .single();
