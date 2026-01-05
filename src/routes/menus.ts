@@ -65,6 +65,11 @@ const reorderMenuItemsSchema = z.object({
   ).min(1),
 });
 
+const moveMenuItemSchema = z.object({
+  target_section_id: z.string().uuid(),
+  order_index: z.number().int().min(0).default(0),
+});
+
 /**
  * GET /api/menus/restaurant/:restaurantId
  * Listar menús de un restaurant
@@ -130,7 +135,46 @@ router.get('/public/:restaurantSlug/:menuSlug', optionalAuth, asyncHandler(async
       console.error('Error incrementando view count:', err.message);
     });
 
-  return ApiResponseUtil.success(res, data);
+  // Cargar secciones y platos ordenados
+  const { data: sections, error: sectionsError } = await supabase
+    .from('menu_sections')
+    .select('*')
+    .eq('menu_id', menuId)
+    .order('order_index', { ascending: true });
+
+  if (sectionsError) {
+    throw new AppError('Error obteniendo secciones del menú', 500);
+  }
+
+  const sectionIds = (sections ?? []).map((section: any) => section.id);
+  let itemsBySection: Record<string, any[]> = {};
+
+  if (sectionIds.length > 0) {
+    const { data: items, error: itemsError } = await supabase
+      .from('menu_items')
+      .select('*')
+      .in('section_id', sectionIds)
+      .eq('available', true)
+      .order('order_index', { ascending: true });
+
+    if (itemsError) {
+      throw new AppError('Error obteniendo platos del menú', 500);
+    }
+
+    itemsBySection = (items ?? []).reduce<Record<string, any[]>>((acc, item) => {
+      const sectionId = (item as any).section_id as string;
+      if (!acc[sectionId]) acc[sectionId] = [];
+      acc[sectionId].push(item);
+      return acc;
+    }, {});
+  }
+
+  const sectionsWithItems = (sections ?? []).map((section: any) => ({
+    ...section,
+    items: itemsBySection[section.id] ?? [],
+  }));
+
+  return ApiResponseUtil.success(res, { menu: data, sections: sectionsWithItems });
 }));
 
 /**
@@ -385,6 +429,75 @@ router.post(
     if (error) throw new AppError('Error creando plato', 500);
 
     return ApiResponseUtil.created(res, data, 'Plato creado exitosamente');
+  })
+);
+
+/**
+ * PATCH /api/menus/sections/:sectionId/items/:itemId/move
+ * Mover un plato a otra sección del mismo menú
+ */
+router.patch(
+  '/sections/:sectionId/items/:itemId/move',
+  authenticate,
+  validate(moveMenuItemSchema),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { sectionId, itemId } = req.params;
+    const { target_section_id, order_index } = req.body as z.infer<typeof moveMenuItemSchema>;
+
+    // Verificar sección origen y ownership
+    const { data: sourceSection } = await supabaseAdmin
+      .from('menu_sections')
+      .select('id, menu_id, menus!inner(restaurants!inner(owner_id))')
+      .eq('id', sectionId)
+      .single();
+
+    if (!sourceSection || (sourceSection as any).menus?.restaurants?.owner_id !== req.userId) {
+      throw new AppError('Sección origen no encontrada', 404);
+    }
+
+    // Verificar item pertenece a la sección origen
+    const { data: item } = await supabaseAdmin
+      .from('menu_items')
+      .select('id, section_id')
+      .eq('id', itemId)
+      .eq('section_id', sectionId)
+      .single();
+
+    if (!item) {
+      throw new AppError('Plato no encontrado en la sección origen', 404);
+    }
+
+    // Verificar sección destino y ownership
+    const { data: targetSection } = await supabaseAdmin
+      .from('menu_sections')
+      .select('id, menu_id, menus!inner(restaurants!inner(owner_id))')
+      .eq('id', target_section_id)
+      .single();
+
+    if (!targetSection || (targetSection as any).menus?.restaurants?.owner_id !== req.userId) {
+      throw new AppError('Sección destino no encontrada', 404);
+    }
+
+    if ((targetSection as any).menu_id !== (sourceSection as any).menu_id) {
+      throw new AppError('Solo puedes mover platos dentro del mismo menú', 400);
+    }
+
+    const { data, error } = await (supabaseAdmin as any)
+      .from('menu_items')
+      .update({
+        section_id: target_section_id,
+        order_index,
+      } as Database['public']['Tables']['menu_items']['Update'])
+      .eq('id', itemId)
+      .eq('section_id', sectionId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new AppError('Error moviendo plato', 500);
+    }
+
+    return ApiResponseUtil.success(res, data, 'Plato movido a la sección destino');
   })
 );
 
