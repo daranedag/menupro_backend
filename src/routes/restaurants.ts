@@ -45,6 +45,62 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res) => {
 }));
 
 /**
+ * GET /api/restaurants/public/:slug
+ * Obtener información pública de un restaurant por slug
+ */
+router.get('/public/:slug', asyncHandler(async (req, res) => {
+  const { slug } = req.params;
+
+  // Usamos supabaseAdmin para evitar bloqueos de RLS en endpoint público
+  const { data, error } = await supabaseAdmin
+    .from('restaurants')
+    .select('owner_id, name, logo_url, phone, address, city, country, website, instagram')
+    .eq('slug', slug)
+    .eq('active', true)
+    .is('deleted_at', null)
+    .single();
+
+  if (error || !data) {
+    throw new AppError('Restaurant no encontrado', 404);
+  }
+
+  const restaurant = data as {
+    owner_id: string;
+    name: string;
+    logo_url: string | null;
+    phone: string | null;
+    address: string | null;
+    city: string | null;
+    country: string | null;
+    website: string | null;
+    instagram: string | null;
+  };
+
+  // Suscripción activa del dueño (tier_name desde tiers)
+  const { data: userSubscription } = await supabaseAdmin
+    .from('user_subscriptions')
+    .select('tier_id, tiers(name)')
+    .eq('user_id', restaurant.owner_id)
+    .eq('active', true)
+    .order('created_at', { ascending: false })
+    .maybeSingle();
+
+  const tierName = (userSubscription as any)?.tiers?.name ?? null;
+
+  return ApiResponseUtil.success(res, {
+    name: restaurant.name,
+    logo_url: restaurant.logo_url,
+    phone: restaurant.phone,
+    address: restaurant.address,
+    city: restaurant.city,
+    country: restaurant.country,
+    website: restaurant.website,
+    instagram: restaurant.instagram,
+    tier_name: tierName,
+  });
+}));
+
+/**
  * GET /api/restaurants/:id
  * Obtener restaurant por ID
  */
@@ -91,7 +147,7 @@ router.post(
         country: body.country,
         primary_color: body.primary_color,
         secondary_color: body.secondary_color,
-      })
+      } as any)
       .select()
       .single();
 
@@ -130,7 +186,7 @@ router.patch(
       throw new AppError('Restaurant no encontrado', 404);
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await (supabaseAdmin as any)
       .from('restaurants')
       .update(body)
       .eq('id', id)
@@ -150,7 +206,7 @@ router.patch(
 router.delete('/:id', authenticate, asyncHandler(async (req: AuthRequest, res) => {
   const { id } = req.params;
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await (supabaseAdmin as any)
     .from('restaurants')
     .update({ deleted_at: new Date().toISOString() })
     .eq('id', id)

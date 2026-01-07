@@ -107,7 +107,7 @@ router.get('/restaurant/:restaurantId', authenticate, asyncHandler(async (req: A
 router.get('/public/:restaurantSlug/:menuSlug', optionalAuth, asyncHandler(async (req, res) => {
   const { restaurantSlug, menuSlug } = req.params;
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('menus_with_restaurant')
     .select('*')
     .eq('restaurant_slug', restaurantSlug)
@@ -136,7 +136,7 @@ router.get('/public/:restaurantSlug/:menuSlug', optionalAuth, asyncHandler(async
     });
 
   // Cargar secciones y platos ordenados
-  const { data: sections, error: sectionsError } = await supabase
+  const { data: sections, error: sectionsError } = await supabaseAdmin
     .from('menu_sections')
     .select('*')
     .eq('menu_id', menuId)
@@ -150,7 +150,7 @@ router.get('/public/:restaurantSlug/:menuSlug', optionalAuth, asyncHandler(async
   let itemsBySection: Record<string, any[]> = {};
 
   if (sectionIds.length > 0) {
-    const { data: items, error: itemsError } = await supabase
+    const { data: items, error: itemsError } = await supabaseAdmin
       .from('menu_items')
       .select('*')
       .in('section_id', sectionIds)
